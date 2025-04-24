@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, Search, X, Eye, EyeOff, FileSpreadsheet, Trash2, BarChart, PieChart, Table } from 'lucide-react';
+import { Upload, Search, X, Eye, EyeOff, FileSpreadsheet, Trash2, BarChart, PieChart, Table, Plus } from 'lucide-react';
 import { 
   Chart as ChartJS, 
   ArcElement, 
@@ -24,7 +24,7 @@ ChartJS.register(
 );
 
 interface FilterState {
-  [key: string]: string;
+  [key: string]: string[];
 }
 
 interface ColumnVisibility {
@@ -54,6 +54,7 @@ function App() {
   const [chartColumn, setChartColumn] = useState<string>('');
   const [aggregateColumn, setAggregateColumn] = useState<string>('');
   const [secondaryChartColumn, setSecondaryChartColumn] = useState<string>('');
+  const [showFilterSelect, setShowFilterSelect] = useState<Record<string, boolean>>({});
 
   const getUniqueValues = (data: any[], header: string): string[] => {
     const uniqueSet = new Set(
@@ -127,25 +128,48 @@ function App() {
 
       const initialFilters: FilterState = {};
       const initialVisibility: ColumnVisibility = {};
+      const initialShowSelect: Record<string, boolean> = {};
 
       headerArray.forEach(header => {
-        initialFilters[header] = '';
+        initialFilters[header] = [];
         initialVisibility[header] = true;
+        initialShowSelect[header] = false;
       });
 
       setAllData(newDataArray);
       setFilters(initialFilters);
       setActiveColumns(initialVisibility);
       setColumnOptions(allOptions);
+      setShowFilterSelect(initialShowSelect);
     } catch (error) {
       console.error('Erro ao processar arquivos:', error);
     }
   };
 
   const handleFilterChange = (header: string, value: string) => {
+    if (!value) return;
+
     setFilters(prev => ({
       ...prev,
-      [header]: value
+      [header]: [...(prev[header] || []), value]
+    }));
+    setShowFilterSelect(prev => ({
+      ...prev,
+      [header]: false
+    }));
+  };
+
+  const removeFilter = (header: string, value: string) => {
+    setFilters(prev => ({
+      ...prev,
+      [header]: prev[header].filter(v => v !== value)
+    }));
+  };
+
+  const toggleFilterSelect = (header: string) => {
+    setShowFilterSelect(prev => ({
+      ...prev,
+      [header]: !prev[header]
     }));
   };
 
@@ -166,6 +190,11 @@ function App() {
       }
       return newHidden;
     });
+  };
+
+  const getAvailableOptions = (header: string): string[] => {
+    const selectedValues = new Set(filters[header] || []);
+    return (columnOptions[header] || []).filter(option => !selectedValues.has(option));
   };
 
   const getChartData = () => {
@@ -299,10 +328,10 @@ function App() {
   const applyFilters = () => {
     const allFilteredData = allData.flatMap(fileData => {
       return fileData.data.filter(row => {
-        return Object.entries(filters).every(([header, filterValue]) => {
-          if (!activeColumns[header] || !filterValue) return true;
+        return Object.entries(filters).every(([header, filterValues]) => {
+          if (!activeColumns[header] || filterValues.length === 0) return true;
           const cellValue = String(row[header] || '').toLowerCase();
-          return cellValue === filterValue.toLowerCase();
+          return filterValues.some(value => cellValue === value.toLowerCase());
         });
       }).map(row => ({
         ...row,
@@ -316,9 +345,10 @@ function App() {
   const clearFilters = () => {
     const clearedFilters: FilterState = {};
     headers.forEach(header => {
-      clearedFilters[header] = '';
+      clearedFilters[header] = [];
     });
     setFilters(clearedFilters);
+    setShowFilterSelect({});
   };
 
   useEffect(() => {
@@ -525,30 +555,56 @@ function App() {
                           </button>
                         </div>
                       </div>
-                      <div className="relative">
-                        <select
-                          value={filters[header]}
-                          onChange={(e) => handleFilterChange(header, e.target.value)}
-                          className={`w-full px-4 py-2 bg-gray-800 border rounded-lg transition-colors appearance-none ${
-                            activeColumns[header]
-                              ? 'border-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-white'
-                              : 'border-gray-700 bg-gray-800 text-gray-500'
-                          }`}
-                          disabled={!activeColumns[header]}
-                        >
-                          <option value="">{getPlaceholder(header)}</option>
-                          {columnOptions[header]?.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
+
+                      <div className="space-y-2">
+                        {/* Lista de filtros selecionados */}
+                        <div className="flex flex-wrap gap-2">
+                          {filters[header]?.map((value) => (
+                            <div
+                              key={value}
+                              className="flex items-center gap-2 bg-indigo-600 text-white px-3 py-1 rounded-lg"
+                            >
+                              <span>{value}</span>
+                              <button
+                                onClick={() => removeFilter(header, value)}
+                                className="hover:text-red-300"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
                           ))}
-                        </select>
-                        <Search 
-                          className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${
-                            activeColumns[header] ? 'text-gray-400' : 'text-gray-600'
-                          }`} 
-                          size={18} 
-                        />
+                        </div>
+
+                        {/* Botão de adicionar ou select de opções */}
+                        {showFilterSelect[header] ? (
+                          <div className="relative">
+                            <select
+                              value=""
+                              onChange={(e) => handleFilterChange(header, e.target.value)}
+                              className="w-full px-4 py-2 bg-gray-800 border rounded-lg transition-colors appearance-none text-white border-gray-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            >
+                              <option value="">{getPlaceholder(header)}</option>
+                              {getAvailableOptions(header).map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                            <Search 
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+                              size={18}
+                            />
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => toggleFilterSelect(header)}
+                            className="flex items-center gap-2 text-indigo-400 hover:text-indigo-300 transition-colors"
+                            disabled={getAvailableOptions(header).length === 0}
+                          >
+                            <Plus size={16} />
+                            Adicionar filtro
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
